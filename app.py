@@ -3,24 +3,20 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 import os
-from flask_migrate import Migrate  # Импортируем миграции
+from flask_migrate import Migrate
 
-# Инициализация Flask приложения
 app = Flask(__name__)
 
-# Настройка базы данных и конфигурации Flask
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///books.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['SECRET_KEY'] = os.urandom(24)  # Генерация случайного ключа для безопасности
+app.config['SECRET_KEY'] = os.urandom(24)
 
-# Инициализация расширений
 db = SQLAlchemy(app)
 login_manager = LoginManager(app)
-login_manager.login_view = 'login'  # Редирект на страницу логина при отсутствии сессии
-migrate = Migrate(app, db)  # Инициализация миграций
+login_manager.login_view = 'login'
+migrate = Migrate(app, db)
 
 
-# Модель для книги
 class Book(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(120), nullable=False)
@@ -31,7 +27,6 @@ class Book(db.Model):
         return f"Book('{self.title}', {self.price})"
 
 
-# Модель для пользователя
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(150), unique=True, nullable=False)
@@ -44,50 +39,44 @@ class User(UserMixin, db.Model):
         return check_password_hash(self.password, password)
 
 
-# Загрузка пользователя
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
 
 
-# Главная страница
 @app.route("/", methods=["GET", "POST"])
 def index():
-    search_query = request.args.get("search")  # Получаем поисковый запрос
+    search_query = request.args.get("search")
     if search_query:
-        books = Book.query.filter(Book.title.ilike(f"%{search_query}%")).all()  # Фильтруем книги по запросу
+        books = Book.query.filter(Book.title.ilike(f"%{search_query}%")).all()
     else:
-        books = Book.query.all()  # Если нет запроса, выводим все книги
+        books = Book.query.all()
     return render_template('index.html', books=books, search_query=search_query)
 
 
-# Страница "О нас"
 @app.route("/about")
 def about():
     return render_template('about.html')
 
 
-# Страница логина
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
         username = request.form.get('username')
         password = request.form.get('password')
 
-        # Проверка пользователя
         user = User.query.filter_by(username=username).first()
 
         if user and user.check_password(password):
             login_user(user)
             flash("Вы успешно вошли в систему!", "success")
-            return redirect(url_for('index'))  # Перенаправление на главную страницу после успешного логина
+            return redirect(url_for('index'))
         else:
             flash('Неверные имя пользователя или пароль', 'danger')  # Сообщение об ошибке
 
     return render_template('login.html')
 
 
-# Страница регистрации
 @app.route("/signup", methods=["GET", "POST"])
 def signup():
     if request.method == "POST":
@@ -95,34 +84,29 @@ def signup():
         password = request.form.get('password')
         hashed_password = generate_password_hash(password)
 
-        # Проверка, существует ли уже пользователь с таким именем
         if User.query.filter_by(username=username).first():
             flash('Пользователь с таким именем уже существует.', 'danger')
             return redirect(url_for('signup'))
 
-        # Создаем нового пользователя
         new_user = User(username=username, password=hashed_password)
         db.session.add(new_user)
         db.session.commit()
 
-        # Логиним пользователя сразу после регистрации
         login_user(new_user)
 
         flash('Регистрация прошла успешно. Вы вошли в систему.', 'success')
-        return redirect(url_for('index'))  # Перенаправление на главную страницу
+        return redirect(url_for('index'))
 
     return render_template('signup.html')
 
 
-# Страница выхода
 @app.route("/logout")
 @login_required
 def logout():
     logout_user()
-    return redirect(url_for('index'))  # После выхода перенаправляем на главную страницу
+    return redirect(url_for('index'))
 
 
-# Страница оформления заказа (Checkout)
 @app.route("/checkout/<int:book_id>")
 def checkout(book_id):
     # Получаем информацию о книге по ID
@@ -130,45 +114,36 @@ def checkout(book_id):
     return render_template('checkout.html', book=book)
 
 
-# Страница завершения оформления заказа
 @app.route("/complete_checkout/<int:book_id>", methods=["POST"])
 def complete_checkout(book_id):
-    # Получаем книгу по ID
     book = Book.query.get_or_404(book_id)
 
-    # Получаем данные из формы
     name = request.form['name']
     address = request.form['address']
 
-    # Здесь можно добавить логику для сохранения заказа в базе данных
     flash(f"Покупка книги '{book.title}' прошла успешно! Ваш заказ будет отправлен на адрес: {address}.", "success")
 
-    return redirect(url_for('index'))  # Перенаправление на главную страницу
+    return redirect(url_for('index'))
 
 
-# Страница аккаунта
 @app.route("/account")
 @login_required
 def account():
     return render_template('account.html', user=current_user)
 
 
-# Страница корзины
 @app.route("/cart")
 @login_required
 def cart():
-    # Логика отображения корзины
     cart_books = []
     if 'cart' in session:
         cart_books = Book.query.filter(Book.id.in_(session['cart'])).all()
 
-    # Подсчитываем общую стоимость
     total_price = sum(book.price for book in cart_books)
 
     return render_template('cart.html', cart_books=cart_books, total_price=total_price)
 
 
-# Добавить книгу в корзину
 @app.route("/add_to_cart/<int:book_id>")
 def add_to_cart(book_id):
     if 'cart' not in session:
@@ -179,7 +154,6 @@ def add_to_cart(book_id):
     return redirect(url_for('index'))
 
 
-# Удалить книгу из корзины
 @app.route("/remove_from_cart/<int:book_id>", methods=["POST"])
 def remove_from_cart(book_id):
     if 'cart' in session:
@@ -189,7 +163,6 @@ def remove_from_cart(book_id):
     return redirect(url_for('cart'))
 
 
-# Очистить корзину
 @app.route("/clear_cart")
 def clear_cart():
     session.pop('cart', None)
@@ -197,7 +170,6 @@ def clear_cart():
     return redirect(url_for('cart'))
 
 
-# Создание базы данных, если она не существует
 @app.before_request
 def create_tables():
     db.create_all()
@@ -209,7 +181,6 @@ def create_tables():
         db.session.commit()
 
     if Book.query.count() == 0:
-        # Добавление стандартных книг
         books = [
             Book(title="The Great Gatsby", price=10.99, description="A novel by F. Scott Fitzgerald."),
             Book(title="1984", price=8.99, description="A dystopian novel by George Orwell."),
@@ -223,13 +194,6 @@ def create_tables():
         ]
         db.session.bulk_save_objects(books)
         db.session.commit()
-
-
-
-
-
-
-
 
 
 if __name__ == "__main__":
